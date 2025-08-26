@@ -4,6 +4,8 @@ from pyflink.table import EnvironmentSettings, TableEnvironment
 import os
 import json
 import pyflink
+from datetime import datetime, timezone
+
 
 #######################################
 # 1. Creates the execution environment
@@ -71,11 +73,12 @@ def main():
     source_init_timestamp = "\n'source.init.timestamp' = '{0}',".format(
         input_stream_init_timestamp) if input_stream_init_timestamp is not None else ''
 
+    # 1️⃣ Source table (Kinesis)
     table_env.execute_sql(f"""
         CREATE TABLE temperature_metrics (
-                city VARCHAR(10) ,
+                city VARCHAR(10),
                 temperature NUMERIC(6,2),
-                updated_at TIMESTAMP_LTZ(3) NOT NULL
+                updated_at TIMESTAMP_LTZ(3)
               )
               PARTITIONED BY (city)
               WITH (
@@ -84,26 +87,65 @@ def main():
                 'aws.region' = '{input_stream_region}',
                 {source_init_pos}{source_init_timestamp}
                 'format' = 'json',
-                'json.timestamp-format.standard' = 'ISO-8601'
-              ) """)
-
-
-
-    table_env.execute_sql(f"""
-            CREATE TABLE output (
-                city VARCHAR(10),
-                temperature NUMERIC(6,2),
-                updated_at TIMESTAMP_LTZ(3)
+                'json.timestamp-format.standard' = 'ISO-8601',
+                'json.ignore-parse-errors' = 'true',       -- skip malformed JSON
+                'json.fail-on-missing-field' = 'false'     -- allow missing fields
               )
-              WITH (
-                'connector' = 'print'
-                )""")
+    """)
 
+    # 2️⃣ Main sink for valid data
+    table_env.execute_sql("""
+        CREATE TABLE temperature_metrics (
+            city VARCHAR(10),
+            temperature NUMERIC(6,2),
+            updated_at TIMESTAMP_LTZ(3)
+        )
+        PARTITIONED BY(city)
+        WITH(
+        'connector' = 'filesystem',
+        'path' = 's3a://umarchine-bucket/temperature_metrics/',
+        'format' = 'json',
+        'json.timestamp-format.standard' = 'ISO-8601',
+        'sink.partition-commit.policy.kind' = 'success-file',
+        'sink.partition-commit.delay' = '1 min'
+        ) """)
 
+    # 3️⃣ Sink for invalid/malformed rows
+    table_env.execute_sql("""
+        CREATE TABLE temperature_metrics_bad_records (
+            city VARCHAR(10),
+            temperature NUMERIC(6,2),
+            updated_at TIMESTAMP_LTZ(3)
+        )
+        PARTITIONED BY(city)
+        WITH(
+        'connector' = 'filesystem',
+        'path' = 's3a://umarchine-bucket/temperature_metrics_bad_records/',
+        'format' = 'json',
+        'json.timestamp-format.standard' = 'ISO-8601',
+        'sink.partition-commit.policy.kind' = 'success-file',
+        'sink.partition-commit.delay' = '1 min'
+        ) """)
+
+    # 4️⃣ Insert valid rows into main sink
     table_result = table_env.execute_sql("""
-        INSERT INTO output 
-        SELECT city, temperature, updated_at 
-        FROM temperature_metrics""")
+        INSERT INTO temperature_metrics
+        SELECT city, temperature, updated_at
+        FROM temperature_metrics
+        WHERE city IS NOT NULL
+          AND temperature IS NOT NULL
+          AND updated_at IS NOT NULL
+    """)
+
+    # 5️⃣ Insert invalid rows into bad_rows sink
+    table_env.execute_sql("""
+        INSERT INTO temperature_metrics_bad_records
+        SELECT city, temperature, updated_at
+        FROM temperature_metrics
+        WHERE city IS NULL
+           OR temperature IS NULL
+           OR updated_at IS NULL
+    """)
 
     if is_local:
         table_result.wait()
@@ -111,3 +153,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
