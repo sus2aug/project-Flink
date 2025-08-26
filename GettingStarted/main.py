@@ -95,7 +95,7 @@ def main():
 
     # 2️⃣ Main sink for valid data
     table_env.execute_sql("""
-        CREATE TABLE temperature_metrics (
+        CREATE TABLE temperature_metrics_processed_records (
             city VARCHAR(10),
             temperature NUMERIC(6,2),
             updated_at TIMESTAMP_LTZ(3)
@@ -103,7 +103,7 @@ def main():
         PARTITIONED BY(city)
         WITH(
         'connector' = 'filesystem',
-        'path' = 's3a://umarchine-bucket/temperature_metrics/',
+        'path' = 's3a://umarchine-bucket/temperature_metrics_processed_records/',
         'format' = 'json',
         'json.timestamp-format.standard' = 'ISO-8601',
         'sink.partition-commit.policy.kind' = 'success-file',
@@ -129,7 +129,7 @@ def main():
 
     # 4️⃣ Insert valid rows into main sink
     table_result = table_env.execute_sql("""
-        INSERT INTO temperature_metrics
+        INSERT INTO temperature_metrics_processed_records
         SELECT city, temperature, updated_at
         FROM temperature_metrics
         WHERE city IS NOT NULL
