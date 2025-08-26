@@ -117,7 +117,6 @@ def main():
             temperature NUMERIC(6,2),
             updated_at TIMESTAMP_LTZ(3)
         )
-        PARTITIONED BY(city)
         WITH(
         'connector' = 'filesystem',
         'path' = 's3a://umarchine-bucket/temperature_metrics_bad_records/',
