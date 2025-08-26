@@ -21,6 +21,11 @@
     <dependencies>
         <dependency>
             <groupId>org.apache.flink</groupId>
+            <artifactId>flink-s3-fs-hadoop</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-aws-kinesis-streams</artifactId>
             <!-- Note: We do not use flink-sql-connector-aws-kinesis-streams (with "-sql-")
             because Maven automatically include any transitive dependency -->
